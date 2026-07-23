@@ -414,6 +414,21 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
       <button class="btn btn-red btn-sm" onclick="doDeletePlayerConfirm()">🗑 이 선수 삭제</button>
       <span class="hint">삭제하면 명단에서 제외됩니다. 이미 생성된 대진표의 기록은 그대로 남습니다.</span>
     </div>
+</div>
+
+<!-- 출석체크: 학생/학부모 연락처 팝업 -->
+<div class="modal-bg" id="student-contact-modal-bg">
+  <div class="modal" style="width:340px">
+    <h3 id="scm-title">📞 학생 연락처</h3>
+    <div class="field"><label>학교 · 학년</label><div id="scm-school" style="font-size:14px;font-weight:600;"></div></div>
+    <div class="field"><label>학생 연락처</label><div id="scm-phone" style="font-size:16px;font-weight:800;"></div></div>
+    <div class="field"><label>학부모 연락처</label>
+      <input type="text" id="scm-parent-phone" placeholder="학부모 연락처 입력">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-blue" onclick="saveStudentContactModal()">저장</button>
+      <button class="btn btn-gray" onclick="closeModal('student-contact-modal-bg')">닫기</button>
+    </div>
   </div>
 </div>
 
@@ -565,24 +580,15 @@ function openAttendanceList(){
     renderDayGrid();
   }
 }
-function dayCompletionCount(dayKey){
-  const d = attendanceData[dayKey] || {};
-  let cnt = 0;
-  ['1','2','3'].forEach(function(p){
-    const per = d[p] || {};
-    cnt += STUDENTS.filter(function(s){ return per[s.id]; }).length;
-  });
-  return cnt;
+function schoolAbbrev(s){
+  return String(s.school||'').replace(/학교$/,'') + String(s.grade||'').replace(/학년$/,'');
 }
 function renderDayGrid(){
   const grid = document.getElementById('day-grid');
   grid.innerHTML = DAYS.map(function(d){
-    const cnt = dayCompletionCount(d.key);
-    const total = STUDENTS.length*3;
     return `<div class="day-card" onclick="openAttendanceDay('${d.key}')">
       <div class="dc-date">${d.label}</div>
       <div class="dc-teacher">${d.teacher}</div>
-      <div class="dc-stat">${cnt}/${total} 체크</div>
     </div>`;
   }).join('');
 }
@@ -599,16 +605,17 @@ function renderAttendDay(dayKey){
   document.getElementById('attend-day-title').innerHTML =
     `✅ ${d.label} <span class="hint" style="margin-left:6px;">(${d.teacher})</span>`;
   const dayData = attendanceData[dayKey] || {};
-  let html = `<thead><tr><th style="text-align:left">이름</th><th style="text-align:left">학교/학년</th>
-    <th>1차시<br><span class="period-head-btn" onclick="checkAllPeriod('${dayKey}','1')">전체출석</span></th>
-    <th>2차시<br><span class="period-head-btn" onclick="checkAllPeriod('${dayKey}','2')">전체출석</span></th>
-    <th>3차시<br><span class="period-head-btn" onclick="checkAllPeriod('${dayKey}','3')">전체출석</span></th></tr></thead><tbody>`;
+  let html = `<thead><tr><th style="text-align:left">이름</th><th style="text-align:left">학교</th>
+    <th>1차시</th><th>2차시</th><th>3차시</th><th>전체</th></tr></thead><tbody>`;
   STUDENTS.forEach(function(s){
-    html += `<tr><td class="nm">${esc(s.name)}</td><td class="sch">${esc(s.school)} · ${esc(s.grade)}</td>`;
+    const allChecked = ['1','2','3'].every(function(p){ return dayData[p] && dayData[p][s.id]; });
+    html += `<tr><td class="nm"><a href="javascript:void(0)" onclick="openStudentContactModal('${s.id}')" style="color:var(--blue);text-decoration:none;">${esc(s.name)}</a></td>
+      <td class="sch">${esc(schoolAbbrev(s))}</td>`;
     ['1','2','3'].forEach(function(p){
       const checked = dayData[p] && dayData[p][s.id];
       html += `<td><input class="att-chk" type="checkbox" ${checked?'checked':''} onchange="toggleAttendance('${dayKey}','${p}','${s.id}',this.checked)"></td>`;
     });
+    html += `<td><input class="att-chk" type="checkbox" ${allChecked?'checked':''} onchange="toggleAllPeriodsForStudent('${dayKey}','${s.id}',this.checked)"></td>`;
     html += '</tr>';
   });
   html += '</tbody>';
@@ -619,12 +626,13 @@ function toggleAttendance(dayKey, period, studentId, checked){
     .then(function(){ toast(checked?'출석 체크 ✓':'출석 해제됨','ok'); })
     .catch(function(e){ toast('오류: '+e.message,'err'); });
 }
-function checkAllPeriod(dayKey, period){
-  if (!confirm(period+'차시 전체 학생을 출석으로 체크할까요?')) return;
+function toggleAllPeriodsForStudent(dayKey, studentId, checked){
   const upd = {};
-  STUDENTS.forEach(function(s){ upd[s.id] = true; });
-  attRef(dayKey+'/'+period).set(upd)
-    .then(function(){ toast('전체 출석 처리 완료 ✓','ok'); })
+  upd['1/'+studentId] = checked;
+  upd['2/'+studentId] = checked;
+  upd['3/'+studentId] = checked;
+  attRef(dayKey).update(upd)
+    .then(function(){ toast(checked?'전체 차시 출석 체크 ✓':'전체 차시 출석 해제됨','ok'); })
     .catch(function(e){ toast('오류: '+e.message,'err'); });
 }
 
@@ -634,21 +642,24 @@ function checkAllPeriod(dayKey, period){
 let contactsData = {};
 let contactsListenerAttached = false;
 function contactRef(path){ return db.ref('sharedSchool2026/contacts'+(path?'/'+path:'')); }
+function attachContactsListener(){
+  if (contactsListenerAttached) return;
+  contactRef().on('value', function(snap){
+    contactsData = snap.val() || {};
+    renderContacts();
+  });
+  contactsListenerAttached = true;
+}
 function openContacts(){
   hideAllTopPages();
   document.getElementById('page-contacts').classList.add('on');
   document.getElementById('home-btn').style.display = 'inline-block';
-  if (!contactsListenerAttached){
-    contactRef().on('value', function(snap){
-      contactsData = snap.val() || {};
-      renderContacts();
-    });
-    contactsListenerAttached = true;
-  } else {
-    renderContacts();
-  }
+  attachContactsListener();
+  renderContacts();
 }
 function renderContacts(){
+  const tbl = document.getElementById('contact-table');
+  if (!tbl) return;
   let html = `<thead><tr><th>이름</th><th>학교</th><th>학년</th><th>학생 연락처</th><th>학부모 연락처</th></tr></thead><tbody>`;
   STUDENTS.forEach(function(s){
     const parentPhone = (contactsData[s.id] && contactsData[s.id].parentPhone) || '';
@@ -658,12 +669,38 @@ function renderContacts(){
         onchange="saveParentPhone('${s.id}', this.value)"></td></tr>`;
   });
   html += '</tbody>';
-  document.getElementById('contact-table').innerHTML = html;
+  tbl.innerHTML = html;
 }
 function saveParentPhone(studentId, value){
   contactRef(studentId+'/parentPhone').set(value.trim())
-    .then(function(){ toast('학부모 연락처 저장 ✓','ok'); })
+    .then(function(){
+      toast('학부모 연락처 저장 ✓','ok');
+      if (scmStudentId===studentId){
+        document.getElementById('scm-parent-phone').value = value.trim();
+      }
+    })
     .catch(function(e){ toast('오류: '+e.message,'err'); });
+}
+
+// ══ 학생 이름 클릭 → 연락처 팝업 ══
+let scmStudentId = null;
+function openStudentContactModal(studentId){
+  const s = STUDENTS.find(x=>x.id===studentId);
+  if (!s) return;
+  attachContactsListener();
+  scmStudentId = studentId;
+  document.getElementById('scm-title').textContent = '📞 ' + s.name + ' 연락처';
+  document.getElementById('scm-school').textContent = s.school + ' · ' + s.grade;
+  document.getElementById('scm-phone').textContent = s.phone;
+  const parentPhone = (contactsData[studentId] && contactsData[studentId].parentPhone) || '';
+  document.getElementById('scm-parent-phone').value = parentPhone;
+  openModal('student-contact-modal-bg');
+}
+function saveStudentContactModal(){
+  if (!scmStudentId) return;
+  const val = document.getElementById('scm-parent-phone').value;
+  saveParentPhone(scmStudentId, val);
+  closeModal('student-contact-modal-bg');
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1444,6 +1481,7 @@ function movePlayer(pid, fromG, toG){
 
 window.onload = function(){
   showSuperHome();
+  attachContactsListener();
 };
 </script>
 </body>
