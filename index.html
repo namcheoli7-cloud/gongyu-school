@@ -1261,11 +1261,20 @@ function renderSchedule(){
   const mids = Object.keys(matches);
   const grid = document.getElementById('table-grid');
 
-  // 테이블 번호를 최대 5개씩 끊어서 줄 단위로 렌더링
+  // 테이블 번호를 줄 단위로 균형있게 배치 (한 줄 최대 5개, 마지막 줄이 너무 적지 않도록 균등 분배)
   const rows = [];
-  for (let start=1; start<=tableCount; start+=5){
-    rows.push([]);
-    for (let t=start; t<=Math.min(start+4, tableCount); t++) rows[rows.length-1].push(t);
+  if (tableCount > 0){
+    const maxPerRow = 5;
+    const rowCnt = Math.ceil(tableCount / maxPerRow);
+    const base = Math.floor(tableCount / rowCnt);
+    const extra = tableCount % rowCnt;
+    let t = 1;
+    for (let r=0; r<rowCnt; r++){
+      const size = base + (r < extra ? 1 : 0);
+      const arr = [];
+      for (let i=0; i<size; i++){ arr.push(t++); }
+      rows.push(arr);
+    }
   }
 
   function buildCardHtml(t){
