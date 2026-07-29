@@ -164,6 +164,24 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
 .contact-table td{padding:7px 8px;border-bottom:1px solid var(--border);font-size:13px;}
 .contact-table input[type=text]{width:100%;min-width:120px;}
 .contact-table td.phone{font-variant-numeric:tabular-nums;}
+
+/* ══ 모바일(휴대폰) 대응: 경기 카드가 가로로 여러 개 눌리지 않고 한 줄씩 크게 보이도록 ══ */
+@media (max-width: 700px){
+  .table-grid-row{grid-template-columns:1fr !important;}
+  .tc-tablenum-big{font-size:24px;}
+  .tc-names{font-size:16px;}
+  .tc-score{gap:12px;}
+  .sc-box{width:64px;height:46px;font-size:20px;}
+  .hdr{gap:6px;padding:0 10px;flex-wrap:wrap;height:auto;min-height:52px;padding-top:6px;padding-bottom:6px;}
+  .hdr h1{font-size:13.5px;}
+  .back-btn{font-size:12px;padding:6px 9px;}
+  .content{padding:10px;}
+  .att-table th,.att-table td,.contact-table th,.contact-table td{font-size:12px;padding:6px 4px;}
+}
+@media (max-width: 420px){
+  .sc-box{width:56px;height:44px;font-size:18px;}
+  .tc-names{font-size:14.5px;}
+}
 </style>
 </head>
 <body>
