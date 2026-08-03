@@ -193,13 +193,16 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
 .tie-score-big{font-size:18px;font-weight:900;background:rgba(255,255,255,.22);padding:3px 12px;border-radius:8px;white-space:nowrap;}
 .tie-body{padding:12px;}
 .set-row{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px;background:var(--surface2);}
+.set-row.set-done{border-color:var(--green);background:#ebfbee;}
 .set-row:last-child{margin-bottom:0;}
 .set-title{font-size:11.5px;font-weight:800;color:var(--text2);margin-bottom:7px;}
 .set-players{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
 .set-side{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0;}
 .set-side select{width:100%;padding:5px 4px;border:1px solid var(--border);border-radius:6px;font-size:11.5px;background:#fff;}
 .set-vs{font-size:10.5px;color:var(--text3);font-weight:700;flex-shrink:0;}
-.set-score{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
+.games-wrap{display:flex;flex-direction:column;gap:6px;}
+.game-row{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
+.game-label{font-size:11px;font-weight:700;color:var(--text3);width:64px;flex-shrink:0;}
 .tie-winner-banner{background:#ebfbee;color:#1d6d2f;text-align:center;padding:8px;font-weight:800;font-size:12.5px;border-top:1px solid #b2f2bb;}
 </style>
 </head>
@@ -392,7 +395,7 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
       <label>세트 구성 — 한 매치(조 vs 조)당 순서대로 진행할 세트</label>
       <div id="set-config-list"></div>
       <button type="button" class="btn btn-gray btn-sm" onclick="addSetConfigRow()">+ 세트 추가</button>
-      <span class="hint">예: 복식→단식→단식 3세트 구성 시, 한 조가 2세트를 먼저 이기면 매치 승리입니다. 각 세트에 나갈 선수는 경기 화면에서 그때그때 선택합니다.</span>
+      <span class="hint">예: 복식→단식→단식 3세트 구성 시, 한 조가 2세트를 먼저 이기면 매치 승리입니다. 각 세트는 3판 2선승(게임 2개 먼저 이기면 세트 승, 1:1이면 3게임째 진행)으로 진행됩니다. 세트에 나갈 선수는 경기 화면에서 그때그때 선택합니다.</span>
     </div>
     <div class="field"><label id="new-league-groups-label">그룹(수준) 이름 — 쉼표로 구분</label>
       <input type="text" id="new-league-groups" value="1수준,2수준,3수준">
@@ -1254,7 +1257,14 @@ function generateTeamSchedule(){
       const mid = uid();
       const sets = {};
       setConfig.forEach(function(sc, si){
-        sets[si] = { type: sc.type==='double'?'double':'single', playersA:{}, playersB:{}, scoreA:null, scoreB:null, done:false };
+        sets[si] = {
+          type: sc.type==='double'?'double':'single', playersA:{}, playersB:{},
+          games: {
+            0: { scoreA:null, scoreB:null, done:false },
+            1: { scoreA:null, scoreB:null, done:false },
+            2: { scoreA:null, scoreB:null, done:false }
+          }
+        };
       });
       newMatches[mid] = { matchNum: matchNum++, format:'team', teamAIdx:i, teamBIdx:j, sets: sets };
     }
@@ -1265,12 +1275,37 @@ function generateTeamSchedule(){
 }
 
 function teamName(idx){ return (league.groupNames||[])[idx] || ('조'+(idx+1)); }
+
+// 한 게임의 승자 ('A'/'B'/null)
+function gameWinner(g){
+  if (!g || !g.done) return null;
+  if (g.scoreA>g.scoreB) return 'A';
+  if (g.scoreB>g.scoreA) return 'B';
+  return null;
+}
+// 한 세트(3판 2선승)의 결과: 게임 두 개를 먼저 본 뒤, 1:1이면 3게임째를 반영
+function setResult(s){
+  const games = s.games || {};
+  const g0 = games[0] || {}, g1 = games[1] || {}, g2 = games[2] || {};
+  const w0 = gameWinner(g0), w1 = gameWinner(g1);
+  let gA=0, gB=0;
+  if (w0==='A') gA++; else if (w0==='B') gB++;
+  if (w1==='A') gA++; else if (w1==='B') gB++;
+  let done = gA>=2 || gB>=2;
+  const needGame3 = !done && !!g0.done && !!g1.done;
+  if (needGame3){
+    const w2 = gameWinner(g2);
+    if (w2==='A') gA++; else if (w2==='B') gB++;
+    done = gA>=2 || gB>=2;
+  }
+  return { gA:gA, gB:gB, done:done, winner: gA>=2?'A':(gB>=2?'B':null), needGame3:needGame3 };
+}
 function tieSetTally(m){
   let wA=0, wB=0;
   Object.keys(m.sets||{}).forEach(function(k){
-    const s = m.sets[k];
-    if (!s || !s.done) return;
-    if (s.scoreA>s.scoreB) wA++; else if (s.scoreB>s.scoreA) wB++;
+    const sr = setResult(m.sets[k]);
+    if (!sr.done) return;
+    if (sr.winner==='A') wA++; else if (sr.winner==='B') wB++;
   });
   return {wA:wA, wB:wB};
 }
@@ -1279,7 +1314,7 @@ function tieResult(m){
   const total = setIds.length;
   const maj = Math.floor(total/2)+1;
   const t = tieSetTally(m);
-  const doneCnt = setIds.filter(k=>m.sets[k] && m.sets[k].done).length;
+  const doneCnt = setIds.filter(k=>setResult(m.sets[k]).done).length;
   let done=false, winner=null;
   if (t.wA>=maj){ done=true; winner='A'; }
   else if (t.wB>=maj){ done=true; winner='B'; }
@@ -1294,6 +1329,50 @@ function teamPlayerSelectOptions(teamIdx, selectedPid){
     html += `<option value="${pid}" ${pid===selectedPid?'selected':''}>${esc(p.name)}${p.absent?' (결석)':''}</option>`;
   });
   return html;
+}
+function buildGameRowHtml(mid, si, gi, g, label){
+  const scA = (g.scoreA!==null && g.scoreA!==undefined) ? g.scoreA : '';
+  const scB = (g.scoreB!==null && g.scoreB!==undefined) ? g.scoreB : '';
+  return `<div class="game-row">
+    <span class="game-label">${label}${g.done?' ✅':''}</span>
+    <input class="sc-box-sm" type="number" min="0" max="99" id="tg-${mid}-${si}-${gi}-a" value="${scA}" ${g.done?'disabled':''}>
+    <span>:</span>
+    <input class="sc-box-sm" type="number" min="0" max="99" id="tg-${mid}-${si}-${gi}-b" value="${scB}" ${g.done?'disabled':''}>
+    ${g.done
+      ? `<button class="btn btn-gray btn-sm" onclick="reopenTeamGame('${mid}','${si}','${gi}')">✏️</button>`
+      : `<button class="btn btn-blue btn-sm" onclick="submitTeamGame('${mid}','${si}','${gi}')">제출</button>`}
+  </div>`;
+}
+function buildSetHtml(mid, si, s, teamAIdx, teamBIdx){
+  const slots = s.type==='double' ? 2 : 1;
+  const games = s.games || {};
+  const g0 = games[0] || {scoreA:null,scoreB:null,done:false};
+  const g1 = games[1] || {scoreA:null,scoreB:null,done:false};
+  const g2 = games[2] || {scoreA:null,scoreB:null,done:false};
+  const sr = setResult(s);
+  function sideHtml(side, teamIdx){
+    const map = (side==='A' ? (s.playersA||{}) : (s.playersB||{}));
+    let out = '';
+    for (let k=0; k<slots; k++){
+      const pid = map[k] || '';
+      out += `<select ${sr.done?'disabled':''} onchange="setTiePlayer('${mid}','${si}','${side}',${k},this.value)">${teamPlayerSelectOptions(teamIdx, pid)}</select>`;
+    }
+    return out;
+  }
+  let gamesHtml = buildGameRowHtml(mid, si, 0, g0, '1게임') + buildGameRowHtml(mid, si, 1, g1, '2게임');
+  if (sr.needGame3 || g2.done) gamesHtml += buildGameRowHtml(mid, si, 2, g2, '3게임(결승)');
+  const setStatusTxt = sr.done
+    ? ('· 🏆 '+esc(teamName(sr.winner==='A'?teamAIdx:teamBIdx))+' 세트승 ('+sr.gA+':'+sr.gB+')')
+    : ('· '+sr.gA+':'+sr.gB);
+  return `<div class="set-row${sr.done?' set-done':''}">
+    <div class="set-title">${Number(si)+1}세트 · ${s.type==='double'?'🏸 복식':'🏓 단식'} ${setStatusTxt}</div>
+    <div class="set-players">
+      <div class="set-side">${sideHtml('A', teamAIdx)}</div>
+      <span class="set-vs">VS</span>
+      <div class="set-side">${sideHtml('B', teamBIdx)}</div>
+    </div>
+    <div class="games-wrap">${gamesHtml}</div>
+  </div>`;
 }
 function renderTeamSchedule(){
   const grid = document.getElementById('table-grid');
@@ -1314,35 +1393,7 @@ function renderTeamSchedule(){
     if (r.done) doneTieCount++;
     const setIds = Object.keys(m.sets||{}).sort((a,b)=>Number(a)-Number(b));
     const setsHtml = setIds.map(function(si){
-      const s = m.sets[si];
-      const slots = s.type==='double' ? 2 : 1;
-      function sideHtml(side, teamIdx){
-        const map = (side==='A' ? (s.playersA||{}) : (s.playersB||{}));
-        let out = '';
-        for (let k=0; k<slots; k++){
-          const pid = map[k] || '';
-          out += `<select ${s.done?'disabled':''} onchange="setTiePlayer('${mid}','${si}','${side}',${k},this.value)">${teamPlayerSelectOptions(side==='A'?m.teamAIdx:m.teamBIdx, pid)}</select>`;
-        }
-        return out;
-      }
-      const scA = (s.scoreA!==null && s.scoreA!==undefined) ? s.scoreA : '';
-      const scB = (s.scoreB!==null && s.scoreB!==undefined) ? s.scoreB : '';
-      return `<div class="set-row">
-        <div class="set-title">${Number(si)+1}세트 · ${s.type==='double'?'🏸 복식':'🏓 단식'}${s.done?' · ✅ 완료':''}</div>
-        <div class="set-players">
-          <div class="set-side">${sideHtml('A', m.teamAIdx)}</div>
-          <span class="set-vs">VS</span>
-          <div class="set-side">${sideHtml('B', m.teamBIdx)}</div>
-        </div>
-        <div class="set-score">
-          <input class="sc-box-sm" type="number" min="0" max="99" id="tsa-${mid}-${si}" value="${scA}" ${s.done?'disabled':''}>
-          <span>:</span>
-          <input class="sc-box-sm" type="number" min="0" max="99" id="tsb-${mid}-${si}" value="${scB}" ${s.done?'disabled':''}>
-          ${s.done
-            ? `<button class="btn btn-gray btn-sm" onclick="reopenTeamSet('${mid}','${si}')">✏️ 수정</button>`
-            : `<button class="btn btn-blue btn-sm" onclick="submitTeamSet('${mid}','${si}')">제출</button>`}
-        </div>
-      </div>`;
+      return buildSetHtml(mid, si, m.sets[si], m.teamAIdx, m.teamBIdx);
     }).join('');
     return `<div class="tie-card${r.done?' tie-done':''}">
       <div class="tie-head">
@@ -1365,18 +1416,18 @@ function setTiePlayer(mid, si, side, slot, pid){
   const p = pid ? wref(path).set(pid) : wref(path).remove();
   p.catch(function(e){ toast('오류: '+e.message,'err'); });
 }
-function submitTeamSet(mid, si){
-  const sa = document.getElementById('tsa-'+mid+'-'+si).value.trim();
-  const sb = document.getElementById('tsb-'+mid+'-'+si).value.trim();
+function submitTeamGame(mid, si, gi){
+  const sa = document.getElementById('tg-'+mid+'-'+si+'-'+gi+'-a').value.trim();
+  const sb = document.getElementById('tg-'+mid+'-'+si+'-'+gi+'-b').value.trim();
   if (sa===''||sb===''){ toast('점수를 입력하세요','err'); return; }
   if (Number(sa)===Number(sb)){ toast('두 점수가 같을 수 없습니다','err'); return; }
   showOverlay('저장 중...');
-  wref('leagues/'+league._id+'/matches/'+mid+'/sets/'+si).update({ scoreA:Number(sa), scoreB:Number(sb), done:true })
-    .then(function(){ hideOverlay(); toast('세트 결과 저장 ✓','ok'); })
+  wref('leagues/'+league._id+'/matches/'+mid+'/sets/'+si+'/games/'+gi).update({ scoreA:Number(sa), scoreB:Number(sb), done:true })
+    .then(function(){ hideOverlay(); toast('게임 결과 저장 ✓','ok'); })
     .catch(function(e){ hideOverlay(); toast('오류: '+e.message,'err'); });
 }
-function reopenTeamSet(mid, si){
-  wref('leagues/'+league._id+'/matches/'+mid+'/sets/'+si+'/done').set(false)
+function reopenTeamGame(mid, si, gi){
+  wref('leagues/'+league._id+'/matches/'+mid+'/sets/'+si+'/games/'+gi+'/done').set(false)
     .then(function(){ toast('다시 입력할 수 있습니다','ok'); })
     .catch(function(e){ toast('오류: '+e.message,'err'); });
 }
