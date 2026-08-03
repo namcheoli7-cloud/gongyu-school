@@ -204,6 +204,20 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
 .game-row{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
 .game-label{font-size:11px;font-weight:700;color:var(--text3);width:64px;flex-shrink:0;}
 .tie-winner-banner{background:#ebfbee;color:#1d6d2f;text-align:center;padding:8px;font-weight:800;font-size:12.5px;border-top:1px solid #b2f2bb;}
+.tie-toolbar{padding:8px 12px 0;display:flex;justify-content:flex-end;}
+.tie-section-lbl{font-size:13px;font-weight:800;color:var(--text2);margin:18px 0 10px;}
+.tie-section-lbl:first-child{margin-top:0;}
+.empty-sm{font-size:12.5px;color:var(--text3);padding:6px 4px 18px;}
+.tie-wait-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
+.tie-wait-card{background:var(--surface);border:1.5px dashed var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700;}
+.tie-wait-card:hover{border-color:var(--blue);background:var(--blue-lt);}
+.twc-team{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.twc-vs{font-size:10.5px;color:var(--text3);flex-shrink:0;}
+.twc-start{color:var(--blue);font-size:12px;flex-shrink:0;}
+.tie-done-list{display:flex;flex-direction:column;gap:6px;}
+.tie-done-row{display:flex;align-items:center;gap:10px;background:var(--surface2);border-radius:10px;padding:8px 12px;font-size:12.5px;flex-wrap:wrap;}
+.tdr-teams{flex:1;font-weight:700;}
+.tdr-winner{color:#1d6d2f;font-weight:800;font-size:12px;}
 </style>
 </head>
 <body>
@@ -1266,7 +1280,7 @@ function generateTeamSchedule(){
           }
         };
       });
-      newMatches[mid] = { matchNum: matchNum++, format:'team', teamAIdx:i, teamBIdx:j, sets: sets };
+      newMatches[mid] = { matchNum: matchNum++, format:'team', teamAIdx:i, teamBIdx:j, status:'waiting', sets: sets };
     }
   }
   wref('leagues/'+league._id+'/matches').set(newMatches)
@@ -1374,43 +1388,113 @@ function buildSetHtml(mid, si, s, teamAIdx, teamBIdx){
     <div class="games-wrap">${gamesHtml}</div>
   </div>`;
 }
+function getTieStatus(m){
+  if (m.status) return m.status;
+  return tieResult(m).done ? 'done' : 'waiting'; // 이전 버전 호환
+}
+let teamScheduleRenderPending = false;
 function renderTeamSchedule(){
   const grid = document.getElementById('table-grid');
   const doneCard = document.getElementById('done-card');
-  const standingsCard = document.getElementById('student-standings-card');
   if (doneCard) doneCard.style.display='none';
-  if (standingsCard) standingsCard.style.display='none';
+
+  // 드롭다운/입력칸을 조작하는 중이면 다시 그리지 않고 대기 (선택이 사라지는 문제 방지)
+  const active = document.activeElement;
+  if (active && grid.contains(active) && (active.tagName==='SELECT' || active.tagName==='INPUT')){
+    teamScheduleRenderPending = true;
+    return;
+  }
+  teamScheduleRenderPending = false;
+
   const mids = Object.keys(matches).sort((a,b)=>(matches[a].matchNum||0)-(matches[b].matchNum||0));
   if (!mids.length){
     grid.innerHTML = '<div class="empty"><div class="ei">🏆</div>대진표를 먼저 생성하세요.</div>';
     document.getElementById('q-summary').innerHTML = '';
     return;
   }
-  let doneTieCount = 0;
-  const cardsHtml = mids.map(function(mid){
-    const m = matches[mid];
-    const r = tieResult(m);
-    if (r.done) doneTieCount++;
-    const setIds = Object.keys(m.sets||{}).sort((a,b)=>Number(a)-Number(b));
-    const setsHtml = setIds.map(function(si){
-      return buildSetHtml(mid, si, m.sets[si], m.teamAIdx, m.teamBIdx);
-    }).join('');
-    return `<div class="tie-card${r.done?' tie-done':''}">
-      <div class="tie-head">
-        <span>${esc(teamName(m.teamAIdx))}</span>
-        <span class="tie-score-big">${r.wA} : ${r.wB}</span>
-        <span>${esc(teamName(m.teamBIdx))}</span>
-      </div>
-      <div class="tie-body">${setsHtml}</div>
-      ${r.done ? `<div class="tie-winner-banner">${r.winner ? '🏆 '+esc(teamName(r.winner==='A'?m.teamAIdx:m.teamBIdx))+' 승' : '무승부'}</div>` : ''}
-    </div>`;
-  }).join('');
-  grid.innerHTML = `<div class="tie-grid">${cardsHtml}</div>`;
+
+  const playing=[], waiting=[], done=[];
+  mids.forEach(function(mid){
+    const st = getTieStatus(matches[mid]);
+    if (st==='playing') playing.push(mid);
+    else if (st==='done') done.push(mid);
+    else waiting.push(mid);
+  });
+
+  if (studentLocked){
+    grid.innerHTML = playing.length
+      ? `<div class="tie-grid">${playing.map(mid=>buildTieCardHtml(mid, matches[mid])).join('')}</div>`
+      : '<div class="empty"><div class="ei">⏳</div>현재 진행중인 경기가 없습니다.<br>선생님 태블릿에서 경기를 시작해주세요.</div>';
+    document.getElementById('q-summary').innerHTML = `<span class="qs-item">진행중 <b style="color:var(--blue)">${playing.length}</b></span>`;
+    return;
+  }
+
+  let html = '';
+  html += `<div class="tie-section-lbl">▶ 진행중 (${playing.length})</div>`;
+  html += playing.length
+    ? `<div class="tie-grid">${playing.map(mid=>buildTieCardHtml(mid, matches[mid])).join('')}</div>`
+    : `<div class="empty-sm">진행중인 경기가 없습니다. 아래 대기중 경기를 눌러 시작하세요.</div>`;
+
+  html += `<div class="tie-section-lbl">⏳ 대기중 (${waiting.length})</div>`;
+  html += waiting.length
+    ? `<div class="tie-wait-grid">${waiting.map(mid=>buildWaitingCardHtml(mid, matches[mid])).join('')}</div>`
+    : `<div class="empty-sm">대기중인 경기가 없습니다.</div>`;
+
+  if (done.length){
+    html += `<div class="tie-section-lbl">✅ 완료 (${done.length})</div>`;
+    html += `<div class="tie-done-list">${done.map(mid=>buildDoneRowHtml(mid, matches[mid])).join('')}</div>`;
+  }
+
+  grid.innerHTML = html;
   document.getElementById('q-summary').innerHTML = `
     <span class="qs-item">전체 매치 <b>${mids.length}</b></span>
-    <span class="qs-item">완료 <b style="color:var(--green)">${doneTieCount}</b></span>
-    <span class="qs-item">진행중 <b style="color:var(--blue)">${mids.length-doneTieCount}</b></span>`;
+    <span class="qs-item">진행중 <b style="color:var(--blue)">${playing.length}</b></span>
+    <span class="qs-item">대기중 <b style="color:var(--text3)">${waiting.length}</b></span>
+    <span class="qs-item">완료 <b style="color:var(--green)">${done.length}</b></span>`;
 }
+function buildTieCardHtml(mid, m){
+  const r = tieResult(m);
+  const setIds = Object.keys(m.sets||{}).sort((a,b)=>Number(a)-Number(b));
+  const setsHtml = setIds.map(function(si){ return buildSetHtml(mid, si, m.sets[si], m.teamAIdx, m.teamBIdx); }).join('');
+  return `<div class="tie-card${r.done?' tie-done':''}">
+    <div class="tie-head">
+      <span>${esc(teamName(m.teamAIdx))}</span>
+      <span class="tie-score-big">${r.wA} : ${r.wB}</span>
+      <span>${esc(teamName(m.teamBIdx))}</span>
+    </div>
+    ${!studentLocked ? `<div class="tie-toolbar"><button class="btn btn-gray btn-sm" onclick="pauseTeamTie('${mid}')">⏸ 대기중으로 되돌리기</button></div>` : ''}
+    <div class="tie-body">${setsHtml}</div>
+    ${r.done ? `<div class="tie-winner-banner">${r.winner ? '🏆 '+esc(teamName(r.winner==='A'?m.teamAIdx:m.teamBIdx))+' 승' : '무승부'}</div>` : ''}
+  </div>`;
+}
+function buildWaitingCardHtml(mid, m){
+  return `<div class="tie-wait-card" onclick="startTeamTie('${mid}')">
+    <span class="twc-team">${esc(teamName(m.teamAIdx))}</span>
+    <span class="twc-vs">VS</span>
+    <span class="twc-team">${esc(teamName(m.teamBIdx))}</span>
+    <span class="twc-start">▶ 시작</span>
+  </div>`;
+}
+function buildDoneRowHtml(mid, m){
+  const r = tieResult(m);
+  const winnerNm = r.winner ? teamName(r.winner==='A'?m.teamAIdx:m.teamBIdx) : '무승부';
+  return `<div class="tie-done-row">
+    <span class="tdr-teams">${esc(teamName(m.teamAIdx))} ${r.wA}:${r.wB} ${esc(teamName(m.teamBIdx))}</span>
+    <span class="tdr-winner">🏆 ${esc(winnerNm)}</span>
+    <button class="btn btn-gray btn-sm" onclick="startTeamTie('${mid}')">🔄 다시 진행</button>
+  </div>`;
+}
+function startTeamTie(mid){
+  wref('leagues/'+league._id+'/matches/'+mid+'/status').set('playing')
+    .then(function(){ toast('진행중으로 전환 ✓','ok'); })
+    .catch(function(e){ toast('오류: '+e.message,'err'); });
+}
+function pauseTeamTie(mid){
+  wref('leagues/'+league._id+'/matches/'+mid+'/status').set('waiting')
+    .then(function(){ toast('대기중으로 전환되었습니다','ok'); })
+    .catch(function(e){ toast('오류: '+e.message,'err'); });
+}
+
 function setTiePlayer(mid, si, side, slot, pid){
   const path = 'leagues/'+league._id+'/matches/'+mid+'/sets/'+si+'/players'+side+'/'+slot;
   const p = pid ? wref(path).set(pid) : wref(path).remove();
@@ -1421,13 +1505,30 @@ function submitTeamGame(mid, si, gi){
   const sb = document.getElementById('tg-'+mid+'-'+si+'-'+gi+'-b').value.trim();
   if (sa===''||sb===''){ toast('점수를 입력하세요','err'); return; }
   if (Number(sa)===Number(sb)){ toast('두 점수가 같을 수 없습니다','err'); return; }
+  const scoreA = Number(sa), scoreB = Number(sb);
   showOverlay('저장 중...');
-  wref('leagues/'+league._id+'/matches/'+mid+'/sets/'+si+'/games/'+gi).update({ scoreA:Number(sa), scoreB:Number(sb), done:true })
+  const updates = {};
+  updates['matches/'+mid+'/sets/'+si+'/games/'+gi+'/scoreA'] = scoreA;
+  updates['matches/'+mid+'/sets/'+si+'/games/'+gi+'/scoreB'] = scoreB;
+  updates['matches/'+mid+'/sets/'+si+'/games/'+gi+'/done'] = true;
+  // 이 매치가 이 게임 결과로 완료되는지 로컬에서 미리 판정해 status도 함께 갱신
+  const m = matches[mid];
+  if (m){
+    const mCopy = JSON.parse(JSON.stringify(m));
+    if (!mCopy.sets[si].games) mCopy.sets[si].games = {};
+    mCopy.sets[si].games[gi] = { scoreA:scoreA, scoreB:scoreB, done:true };
+    if (tieResult(mCopy).done) updates['matches/'+mid+'/status'] = 'done';
+  }
+  wref('leagues/'+league._id).update(updates)
     .then(function(){ hideOverlay(); toast('게임 결과 저장 ✓','ok'); })
     .catch(function(e){ hideOverlay(); toast('오류: '+e.message,'err'); });
 }
 function reopenTeamGame(mid, si, gi){
-  wref('leagues/'+league._id+'/matches/'+mid+'/sets/'+si+'/games/'+gi+'/done').set(false)
+  const updates = {};
+  updates['matches/'+mid+'/sets/'+si+'/games/'+gi+'/done'] = false;
+  const m = matches[mid];
+  if (m && getTieStatus(m)==='done') updates['matches/'+mid+'/status'] = 'playing';
+  wref('leagues/'+league._id).update(updates)
     .then(function(){ toast('다시 입력할 수 있습니다','ok'); })
     .catch(function(e){ toast('오류: '+e.message,'err'); });
 }
@@ -1809,6 +1910,16 @@ function movePlayer(pid, fromG, toG){
 window.onload = function(){
   showSuperHome();
   attachContactsListener();
+  const gridEl = document.getElementById('table-grid');
+  if (gridEl){
+    gridEl.addEventListener('focusout', function(){
+      setTimeout(function(){
+        if (teamScheduleRenderPending && league && league.format==='team'){
+          renderTeamSchedule();
+        }
+      }, 200);
+    });
+  }
 };
 </script>
 </body>
