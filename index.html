@@ -204,7 +204,7 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
 .game-row{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
 .game-label{font-size:11px;font-weight:700;color:var(--text3);width:64px;flex-shrink:0;}
 .tie-winner-banner{background:#ebfbee;color:#1d6d2f;text-align:center;padding:8px;font-weight:800;font-size:12.5px;border-top:1px solid #b2f2bb;}
-.tie-toolbar{padding:8px 12px 0;display:flex;justify-content:flex-end;}
+.tie-toolbar{padding:8px 12px 0;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .tie-section-lbl{font-size:13px;font-weight:800;color:var(--text2);margin:18px 0 10px;}
 .tie-section-lbl:first-child{margin-top:0;}
 .empty-sm{font-size:12.5px;color:var(--text3);padding:6px 4px 18px;}
@@ -409,7 +409,7 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
       <label>세트 구성 — 한 매치(조 vs 조)당 순서대로 진행할 세트</label>
       <div id="set-config-list"></div>
       <button type="button" class="btn btn-gray btn-sm" onclick="addSetConfigRow()">+ 세트 추가</button>
-      <span class="hint">예: 복식→단식→단식 3세트 구성 시, 구성된 세트를 전부 진행한 뒤 세트를 더 많이 이긴 조가 매치에서 승리합니다(중간에 승부가 갈려도 조기 종료하지 않습니다). 각 세트는 3판 2선승(게임 2개 먼저 이기면 세트 승, 1:1이면 3게임째 진행)으로 진행됩니다. 세트에 나갈 선수는 경기 화면에서 그때그때 선택합니다.</span>
+      <span class="hint">예: 복식→단식→단식 3세트 구성 시, 기본적으로 구성된 세트를 전부 진행합니다(중간에 승부가 갈려도 조기 종료하지 않음). 시간이 부족하면 경기 화면의 "🏁 매치 종료" 버튼으로 그때까지의 결과만으로 매치를 확정할 수 있습니다. 각 세트는 3판 2선승(게임 2개 먼저 이기면 세트 승, 1:1이면 3게임째 진행)으로 진행됩니다. 세트에 나갈 선수는 경기 화면에서 그때그때 선택합니다.</span>
     </div>
     <div class="field"><label id="new-league-groups-label">그룹(수준) 이름 — 쉼표로 구분</label>
       <input type="text" id="new-league-groups" value="1수준,2수준,3수준">
@@ -1323,15 +1323,22 @@ function tieSetTally(m){
   });
   return {wA:wA, wB:wB};
 }
+function allSetsComplete(m){
+  const setIds = Object.keys(m.sets||{});
+  return setIds.length>0 && setIds.every(k=>setResult(m.sets[k]).done);
+}
+function getTieStatus(m){
+  if (m.status) return m.status;
+  return allSetsComplete(m) ? 'done' : 'waiting'; // 이전 버전 호환
+}
 function tieResult(m){
   const setIds = Object.keys(m.sets||{});
-  const total = setIds.length;
   const t = tieSetTally(m);
   const doneCnt = setIds.filter(k=>setResult(m.sets[k]).done).length;
-  // 세트 승패가 일찍 갈려도 매치를 조기 종료하지 않고, 구성된 세트를 전부 진행합니다.
-  const done = total>0 && doneCnt===total;
+  // 매치 완료 여부는 상태값(status) 기준: 세트를 전부 마치면 자동으로, 또는 선생님이 "매치 종료"로 수동으로 확정합니다.
+  const done = getTieStatus(m)==='done';
   const winner = done ? (t.wA>t.wB?'A':(t.wB>t.wA?'B':null)) : null;
-  return { wA:t.wA, wB:t.wB, done:done, winner:winner, doneCnt:doneCnt, total:total };
+  return { wA:t.wA, wB:t.wB, done:done, winner:winner, doneCnt:doneCnt, total:setIds.length };
 }
 function teamPlayerSelectOptions(teamIdx, selectedPid){
   const ids = Object.keys(players).filter(pid=>players[pid].group===teamIdx);
@@ -1385,10 +1392,6 @@ function buildSetHtml(mid, si, s, teamAIdx, teamBIdx){
     </div>
     <div class="games-wrap">${gamesHtml}</div>
   </div>`;
-}
-function getTieStatus(m){
-  if (m.status) return m.status;
-  return tieResult(m).done ? 'done' : 'waiting'; // 이전 버전 호환
 }
 let teamScheduleRenderPending = false;
 function renderTeamSchedule(){
@@ -1459,7 +1462,8 @@ function buildTieCardHtml(mid, m){
   if (!studentLocked){
     toolbarBtn = st==='done'
       ? `<button class="btn btn-gray btn-sm" onclick="startTeamTie('${mid}')">▶ 진행중으로 (계속 진행/수정)</button>`
-      : `<button class="btn btn-gray btn-sm" onclick="pauseTeamTie('${mid}')">⏸ 대기중으로 되돌리기</button>`;
+      : `<button class="btn btn-gray btn-sm" onclick="pauseTeamTie('${mid}')">⏸ 대기중으로</button>
+         <button class="btn btn-blue btn-sm" onclick="finishTeamTie('${mid}')">🏁 매치 종료(결과 확정)</button>`;
   }
   return `<div class="tie-card${r.done?' tie-done':''}">
     <div class="tie-head">
@@ -1499,6 +1503,12 @@ function pauseTeamTie(mid){
     .then(function(){ toast('대기중으로 전환되었습니다','ok'); })
     .catch(function(e){ toast('오류: '+e.message,'err'); });
 }
+function finishTeamTie(mid){
+  if (!confirm('지금까지 진행된 세트 결과로 이 매치를 종료할까요?\n(순위에 승/패/무로 반영됩니다)')) return;
+  wref('leagues/'+league._id+'/matches/'+mid+'/status').set('done')
+    .then(function(){ toast('매치 종료 · 결과 확정 ✓','ok'); })
+    .catch(function(e){ toast('오류: '+e.message,'err'); });
+}
 
 function setTiePlayer(mid, si, side, slot, pid){
   const path = 'leagues/'+league._id+'/matches/'+mid+'/sets/'+si+'/players'+side+'/'+slot;
@@ -1516,13 +1526,13 @@ function submitTeamGame(mid, si, gi){
   updates['matches/'+mid+'/sets/'+si+'/games/'+gi+'/scoreA'] = scoreA;
   updates['matches/'+mid+'/sets/'+si+'/games/'+gi+'/scoreB'] = scoreB;
   updates['matches/'+mid+'/sets/'+si+'/games/'+gi+'/done'] = true;
-  // 이 매치가 이 게임 결과로 완료되는지 로컬에서 미리 판정해 status도 함께 갱신
+  // 이 게임 결과로 모든 세트가 끝나는지 로컬에서 미리 판정해 status를 자동으로 '완료'로 갱신
   const m = matches[mid];
   if (m){
     const mCopy = JSON.parse(JSON.stringify(m));
     if (!mCopy.sets[si].games) mCopy.sets[si].games = {};
     mCopy.sets[si].games[gi] = { scoreA:scoreA, scoreB:scoreB, done:true };
-    if (tieResult(mCopy).done) updates['matches/'+mid+'/status'] = 'done';
+    if (allSetsComplete(mCopy)) updates['matches/'+mid+'/status'] = 'done';
   }
   wref('leagues/'+league._id).update(updates)
     .then(function(){ hideOverlay(); toast('게임 결과 저장 ✓','ok'); })
