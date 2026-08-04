@@ -409,7 +409,7 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
       <label>세트 구성 — 한 매치(조 vs 조)당 순서대로 진행할 세트</label>
       <div id="set-config-list"></div>
       <button type="button" class="btn btn-gray btn-sm" onclick="addSetConfigRow()">+ 세트 추가</button>
-      <span class="hint">예: 복식→단식→단식 3세트 구성 시, 한 조가 2세트를 먼저 이기면 매치 승리입니다. 각 세트는 3판 2선승(게임 2개 먼저 이기면 세트 승, 1:1이면 3게임째 진행)으로 진행됩니다. 세트에 나갈 선수는 경기 화면에서 그때그때 선택합니다.</span>
+      <span class="hint">예: 복식→단식→단식 3세트 구성 시, 구성된 세트를 전부 진행한 뒤 세트를 더 많이 이긴 조가 매치에서 승리합니다(중간에 승부가 갈려도 조기 종료하지 않습니다). 각 세트는 3판 2선승(게임 2개 먼저 이기면 세트 승, 1:1이면 3게임째 진행)으로 진행됩니다. 세트에 나갈 선수는 경기 화면에서 그때그때 선택합니다.</span>
     </div>
     <div class="field"><label id="new-league-groups-label">그룹(수준) 이름 — 쉼표로 구분</label>
       <input type="text" id="new-league-groups" value="1수준,2수준,3수준">
@@ -1326,13 +1326,11 @@ function tieSetTally(m){
 function tieResult(m){
   const setIds = Object.keys(m.sets||{});
   const total = setIds.length;
-  const maj = Math.floor(total/2)+1;
   const t = tieSetTally(m);
   const doneCnt = setIds.filter(k=>setResult(m.sets[k]).done).length;
-  let done=false, winner=null;
-  if (t.wA>=maj){ done=true; winner='A'; }
-  else if (t.wB>=maj){ done=true; winner='B'; }
-  else if (total>0 && doneCnt===total){ done=true; winner = t.wA>t.wB?'A':(t.wB>t.wA?'B':null); }
+  // 세트 승패가 일찍 갈려도 매치를 조기 종료하지 않고, 구성된 세트를 전부 진행합니다.
+  const done = total>0 && doneCnt===total;
+  const winner = done ? (t.wA>t.wB?'A':(t.wB>t.wA?'B':null)) : null;
   return { wA:t.wA, wB:t.wB, done:done, winner:winner, doneCnt:doneCnt, total:total };
 }
 function teamPlayerSelectOptions(teamIdx, selectedPid){
