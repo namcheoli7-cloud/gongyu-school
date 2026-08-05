@@ -58,7 +58,19 @@ input:focus,select:focus{border-color:var(--blue);}
 .grp-block{margin-bottom:16px;}
 .grp-lbl{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--text3);}
 .table-grid{display:flex;flex-direction:column;gap:12px;}
-.table-grid-row{display:grid;gap:12px;}
+.table-grid-row{display:grid;grid-template-columns:repeat(var(--cols,1),1fr);gap:12px;}
+@media (max-width:900px){
+  .table-grid-row{grid-template-columns:repeat(2,1fr) !important;}
+}
+@media (max-width:560px){
+  .table-grid-row{grid-template-columns:1fr !important;}
+  .tc-names{font-size:19px !important;}
+  .tc-class{font-size:12px !important;}
+  .sc-box{width:72px !important;height:56px !important;font-size:26px !important;}
+  .tc-save{padding:14px !important;font-size:16px !important;}
+  .tc-tablenum-big{font-size:24px !important;}
+  .tc-group-badge{font-size:13px !important;}
+}
 .table-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--rl);overflow:hidden;}
 .table-card.playing{border-color:#74c0fc;box-shadow:0 0 0 3px #dbe9f7;}
 .table-card.empty{border-style:dashed;opacity:.55;}
@@ -80,7 +92,8 @@ input:focus,select:focus{border-color:var(--blue);}
 .tc-group-badge{position:absolute;top:10px;right:12px;font-size:14px;font-weight:800;background:rgba(255,255,255,.28);padding:4px 11px;border-radius:8px;}
 .tc-body{padding:14px;}
 .tc-match{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin-bottom:12px;}
-.tc-names{font-weight:700;font-size:15px;line-height:1.5;text-align:center;}
+.tc-match>div{min-width:0;}
+.tc-names{font-weight:700;font-size:15px;line-height:1.5;text-align:center;overflow-wrap:break-word;word-break:keep-all;}
 .tc-class{font-size:10px;color:var(--text3);font-weight:500;}
 .tc-vs{font-size:12px;color:var(--text3);font-weight:700;}
 .tc-score{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;}
@@ -166,22 +179,13 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
 .contact-table input[type=text]{width:100%;min-width:120px;}
 .contact-table td.phone{font-variant-numeric:tabular-nums;}
 
-/* ══ 모바일(휴대폰) 대응: 경기 카드가 가로로 여러 개 눌리지 않고 한 줄씩 크게 보이도록 ══ */
+/* ══ 모바일(휴대폰) 대응: 헤더·출석/연락처 표가 좁은 화면에서도 잘 보이도록 ══ */
 @media (max-width: 700px){
-  .table-grid-row{grid-template-columns:1fr !important;}
-  .tc-tablenum-big{font-size:24px;}
-  .tc-names{font-size:16px;}
-  .tc-score{gap:12px;}
-  .sc-box{width:64px;height:46px;font-size:20px;}
   .hdr{gap:6px;padding:0 10px;flex-wrap:wrap;height:auto;min-height:52px;padding-top:6px;padding-bottom:6px;}
   .hdr h1{font-size:13.5px;}
   .back-btn{font-size:12px;padding:6px 9px;}
   .content{padding:10px;}
   .att-table th,.att-table td,.contact-table th,.contact-table td{font-size:12px;padding:6px 4px;}
-}
-@media (max-width: 420px){
-  .sc-box{width:56px;height:44px;font-size:18px;}
-  .tc-names{font-size:14.5px;}
 }
 
 /* ══ 단체전(조 대항) 화면 ══ */
@@ -1736,7 +1740,7 @@ function renderSchedule(){
   }
 
   grid.innerHTML = tableCount>0
-    ? rows.map(rowTables=>`<div class="table-grid-row" style="grid-template-columns:repeat(${rowTables.length},1fr)">${rowTables.map(buildCardHtml).join('')}</div>`).join('')
+    ? rows.map(rowTables=>`<div class="table-grid-row" style="--cols:${rowTables.length}">${rowTables.map(buildCardHtml).join('')}</div>`).join('')
     : '<div class="empty"><div class="ei">🗓</div>대진표를 먼저 생성하세요.</div>';
   startElapsedTicker();
 
