@@ -1212,6 +1212,7 @@ function doDeletePlayerConfirm(){
 
 // ══════════════ 대진 생성 엔진 (단식/복식 통합) ══════════════
 function buildRounds(playerIds, teamSize){
+  if (teamSize===2) return buildDoublesRoundsFair(playerIds);
   let arr = playerIds.slice();
   if (arr.length % 2 !== 0) arr.push(null); // BYE
   const total = arr.length, numRounds = total-1;
@@ -1222,14 +1223,43 @@ function buildRounds(playerIds, teamSize){
       const a=arr[i], b=arr[total-1-i];
       if (a!==null && b!==null) pairs.push([a,b]);
     }
-    if (teamSize===1){
-      pairs.forEach(p=>out.push({round:round+1, teamA:[p[0]], teamB:[p[1]]}));
-    } else {
-      for (let j=0;j+1<pairs.length;j+=2){
-        out.push({round:round+1, teamA:pairs[j], teamB:pairs[j+1]});
-      }
-    }
+    pairs.forEach(p=>out.push({round:round+1, teamA:[p[0]], teamB:[p[1]]}));
     const fixed=arr[0], rest=arr.slice(1); rest.unshift(rest.pop()); arr=[fixed].concat(rest);
+  }
+  return out;
+}
+// 복식 대진 생성: 매치 4인 1조 구성상 인원수가 4의 배수/배수+1이 아니면 완전히 공정할 수 없지만,
+// "가장 적게 뛴 사람부터 우선 배정"하는 그리디 방식으로 전원 경기 수 차이를 최대 1경기로 보장합니다.
+function buildDoublesRoundsFair(playerIds){
+  const n = playerIds.length;
+  const matchesPerRound = Math.floor(n/4);
+  if (matchesPerRound < 1) return [];
+  const targetAvgGames = n-1; // 단식과 비슷한 수준의 경기수를 목표로 라운드 수 산정
+  const numRounds = Math.ceil((targetAvgGames*n)/(matchesPerRound*4));
+  const gamesPlayed = {}, sitStreak = {};
+  playerIds.forEach(function(id){ gamesPlayed[id]=0; sitStreak[id]=0; });
+  const out = [];
+  for (let round=1; round<=numRounds; round++){
+    const playCount = matchesPerRound*4;
+    // 지금까지 적게 뛴 사람 우선, 동률이면 오래 쉰 사람 우선으로 이번 라운드 출전자를 정함
+    const sorted = playerIds.slice().sort(function(a,b){
+      if (gamesPlayed[a]!==gamesPlayed[b]) return gamesPlayed[a]-gamesPlayed[b];
+      if (sitStreak[a]!==sitStreak[b]) return sitStreak[b]-sitStreak[a];
+      return Math.random()-0.5;
+    });
+    const playing = sorted.slice(0, playCount);
+    const sitting = sorted.slice(playCount);
+    // 같은 우선순위 그룹 내에서 팀 편성이 매번 똑같지 않도록 살짝 섞음
+    for (let i=playing.length-1; i>0; i--){
+      const j = Math.floor(Math.random()*(i+1));
+      const tmp=playing[i]; playing[i]=playing[j]; playing[j]=tmp;
+    }
+    for (let m=0; m<matchesPerRound; m++){
+      const four = playing.slice(m*4, m*4+4);
+      out.push({ round: round, teamA:[four[0],four[1]], teamB:[four[2],four[3]] });
+    }
+    playing.forEach(function(id){ gamesPlayed[id]++; sitStreak[id]=0; });
+    sitting.forEach(function(id){ sitStreak[id]++; });
   }
   return out;
 }
