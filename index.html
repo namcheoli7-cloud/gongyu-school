@@ -96,6 +96,7 @@ input:focus,select:focus{border-color:var(--blue);}
 .tc-save{width:100%;padding:9px;background:var(--green);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;}
 .tc-referee{margin-top:8px;text-align:center;font-size:12px;color:var(--text2);background:var(--surface2);border-radius:6px;padding:5px;}
 .qs-item{background:var(--surface2);border-radius:var(--r);padding:6px 12px;font-size:12px;display:inline-block;margin-right:6px;margin-bottom:8px;}
+.attend-summary{margin-bottom:10px;}
 .sw{overflow-x:auto;}
 table.rt{width:100%;border-collapse:collapse;}
 .rt th{background:var(--surface2);padding:7px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);}
@@ -276,6 +277,7 @@ textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:8px
     <div class="card">
       <button class="back-inline" onclick="openAttendanceList()">← 날짜 목록</button>
       <div class="card-head" id="attend-day-title">출석체크</div>
+      <div id="attend-day-summary" class="attend-summary"></div>
       <div class="sw"><table class="att-table" id="attend-day-table"></table></div>
     </div>
   </div>
@@ -667,6 +669,16 @@ function renderAttendDay(dayKey){
   document.getElementById('attend-day-title').innerHTML =
     `✅ ${d.label} <span class="hint" style="margin-left:6px;">(${d.teacher})</span>`;
   const dayData = attendanceData[dayKey] || {};
+  const total = STUDENTS.length;
+  const cnt1 = STUDENTS.filter(s=>dayData['1'] && dayData['1'][s.id]).length;
+  const cnt2 = STUDENTS.filter(s=>dayData['2'] && dayData['2'][s.id]).length;
+  const cnt3 = STUDENTS.filter(s=>dayData['3'] && dayData['3'][s.id]).length;
+  const cntAny = STUDENTS.filter(s=>['1','2','3'].some(p=>dayData[p] && dayData[p][s.id])).length;
+  document.getElementById('attend-day-summary').innerHTML = `
+    <span class="qs-item">1차시 출석 <b style="color:var(--blue)">${cnt1}</b>/${total}명</span>
+    <span class="qs-item">2차시 출석 <b style="color:var(--blue)">${cnt2}</b>/${total}명</span>
+    <span class="qs-item">3차시 출석 <b style="color:var(--blue)">${cnt3}</b>/${total}명</span>
+    <span class="qs-item">이 날 출석(1회 이상) <b style="color:var(--green)">${cntAny}</b>/${total}명</span>`;
   let html = `<thead><tr><th style="text-align:left">이름</th><th style="text-align:left">학교</th>
     <th>1차시</th><th>2차시</th><th>3차시</th><th>전체</th></tr></thead><tbody>`;
   STUDENTS.forEach(function(s){
